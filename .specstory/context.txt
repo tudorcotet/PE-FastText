@@ -1,0 +1,404 @@
+\documentclass[a4paper,11pt]{scrartcl}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[LGRgreek]{mathastext}
+\usepackage[backend=biber, style=nature]{biblatex}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\usepackage{placeins}
+
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, shapes.geometric, fit, backgrounds}
+
+
+\addbibresource{library.bib}
+
+
+
+\begin{document}
+
+
+
+\title{\vspace{-0.5cm} Positionally-enhanced FastText embeddings for biological sequences}
+
+
+
+
+%%\author{\small{Michael Bohl}}
+\date{}
+
+\setlength\parindent{0pt}
+
+
+\maketitle
+\vspace{-2.2cm}
+\begin{center} 
+Michael Bohl, \textit{mibohl@student.ethz.ch}\\
+Tudor-Stefan Cotet, \textit{tcotet@student.ethz.ch}\\
+\vspace{11pt}
+\today
+\end{center}
+
+\vspace{-0.7cm}
+\section*{Motivation and research goal}
+In recent years, the application of natural language processing (NLP) techniques to biological sequences has opened new avenues for understanding the complex language of life. Among these techniques, FastText has gained attention for its ability to represent tokens as the sum of their character n-grams. This allows it to effectively capture subword information and improve the representation of rare words and morphologically rich languages \cite{bojanowski2017enriching}. This approach naturally extends to biology, where proteins and genomes can be decomposed into overlapping k-mers, with local physicochemical "morphemes" reflecting secondary-structure propensities or binding motifs.\\
+
+However, what FastText lacks is a sense of order. It cannot distinguish whether a DNA sequence lies upstream or downstream of a start codon, or whether a catalytic peptide comes before or after a key amino acid in a protein. This absence of positional information is critical when analyzing biological sequences, where context often determines function.\\
+
+To address this, we propose to graft a positional encoding mechanism, using sinusoidal \cite{vaswani2017attention}, RoPE \cite{su2024roformer}, ALiBi \cite{press2021train}, or learned embeddings \cite{dalla2025nucleotide}, onto FastText. The result is \textbf{Positionally-Enhanced FastText (PE-FastText)}: a single lookup table that produces static yet position-aware embeddings for any window of DNA or protein. This combines the semantic strength of k-mer embeddings with a compact representation of where each motif occurs.
+
+Thanks to its minimal size and linear-time inference, PE-FastText can scan gigabases of raw sequence data on a standard laptop, flagging only the most promising regions for deeper analysis by transformer models such as Evo 2 \cite{brixi2025genome} or HyenaDNA \cite{nguyen2023hyenadna}. In this way, it acts as a fast, lightweight tool for motif discovery and biological sequence prioritization that is easily extendable to large-scale metagenomic datasets.\\
+
+The application of FastText to biological sequences has been explored in previous studies. For example, Le et al. \cite{le2019classifying} fed genomic FastText N-grams into a deep neural network for promoter classification and outperformed state-of-the-art methods, demonstrating FastText's utility in extracting informative features from DNA for classification tasks.
+Similarly, Jin et al. \cite{jin2022protplat} achieved similar success by using FastText for supervised pre-training on protein family classification, surpassing existing benchmarks in accuracy.\\
+
+Building upon these foundations, we aim to develop PE-FastText as a positionally-aware variant of FastText—one that answers both \textit{“what does this motif mean?”} and \textit{“is it in the right place to matter?”} We envision it as a lightweight microscope for biological sequences: sensitive to k-mer chemistry, yet mindful of genomic context.
+
+
+\newpage
+
+\begin{figure}[ht]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    every node/.style={draw,rounded corners=3pt,minimum height=8mm,
+                       inner sep=4pt,font=\scriptsize,align=center},
+    greatarrow/.style={->,>=latex,thick},
+    dna/.style   ={fill=gray!15,text width=28mm},
+    kmer/.style  ={fill=orange!25,text width=30mm},
+    ft/.style    ={fill=orange!15,text width=35mm},
+    pos/.style   ={fill=green!20,text width=36mm},
+    merge/.style ={fill=yellow!25,text width=22mm},
+    peft/.style  ={fill=purple!20,text width=28mm}
+]
+
+% main flow -------------------------------------------------
+\node[dna]   (seq)  {DNA / Protein\\sequence};
+\node[kmer,right=15mm of seq] (tok) {overlapping\\\textit{k}-mers};
+\node[ft,right=15mm of tok]   (ft)  {FastText\\skip-gram\\(n-gram sum)};
+\node[merge,right=17mm of ft] (merge) {Add \\or Concat};
+\node[peft,right=15mm of merge] (peft) {PE-FastText\\vector};
+
+% positional branch ----------------------------------------
+\node[pos,below=15mm of ft] (pos) {Positional encoder\\Sin / RoPE / ALiBi / learned};
+
+% arrows ----------------------------------------------------
+\draw[greatarrow] (seq) -- (tok);
+\draw[greatarrow] (tok) -- node[above=8mm,sloped]{\scriptsize captures “what” (sub-word)} (ft);
+\draw[greatarrow] (ft) -- (merge);
+\draw[greatarrow] (tok) |- (pos);
+\draw[greatarrow] (pos) -| (merge);
+\draw[greatarrow] (merge) -- node[above=8mm,sloped]{\scriptsize captures “what + where”} (peft);
+
+% dashed annotation ----------------------------------------
+\node[font=\scriptsize\itshape,align=left,anchor=west,below=8mm] (note) at ([xshift=4mm]pos.east) {vanilla\\FastText\\lacks\\order};
+\draw[dashed,->,>=latex,thick] (pos) -- (note);
+
+\end{tikzpicture}}
+\caption{Conceptual upgrade from FastText to Positionally-Enhanced FastText (PE-FastText).  
+FastText supplies sub-word semantics; the positional encoder adds index or distance information, producing a single lookup table that knows both \emph{what} a motif is and \emph{where} it sits.}
+\label{fig:peft_concept_clean}
+\end{figure}
+
+
+
+
+
+\section*{Datasets}
+\\~\\
+In this project we will bring together four complementary sequence collections (Table \ref{tab:datasets}) — one for proteins, one for eukaryotic reference DNA, and two for the microbial/metagenomic world—so that the resulting Positionally-Enhanced FastText model is fluent in the entire vocabulary of genomics and proteomics. Each corpus aims to test a different biologically-relevant function of PE-FastText, from general diversity encoding to the utility of positional encodings and performance of relative versus sinusoidal encodings.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.25\textwidth}p{0.4\textwidth}p{0.35\textwidth}}
+\hline
+\textbf{Corpus name} & \textbf{Short description} & \textbf{Where to obtain it from} \\
+\hline
+\textbf{UniRef50} & 97 million non-redundant protein chains ($\leq$ 50\% identity) covering all taxonomic kingdoms & Direct download from the \href{https://www.uniprot.org/}{UniProt} FTP site\\
+\hline
+\textbf{MGnify Protein Catalogue (v2022)} & 2.4 billion predicted proteins assembled from public metagenomes and metatranscriptomes & \href{https://www.ebi.ac.uk/}{EMBL-EBI} MGnify FTP\\
+\hline
+\textbf{GRCh38 + ENCODE regulatory FASTA} & Human reference assembly (3.09 Gbp) plus 8 M annotated regulatory regions & GRCh38 FASTA from \href{https://www.ncbi.nlm.nih.gov/grc}{NCBI} GRC portal and \href{https://www.encodeproject.org/}{ENCODE} bulk download API for BED/FASTA of candidate cis-reg elements \\
+\hline
+\textbf{Synthetic metagenomes} & CAMI II simulated communities and metagenomes (1,700 genomes; 600 plasmids/viruses) & CAMI II data from the associated \href{https://cami-challenge.org/datasets/}{website} \\
+\hline
+\end{tabular}
+\caption{Our chosen datasets, a short description, and how to access them}
+\label{tab:datasets}
+\end{table}
+
+
+\\~\\
+UniRef50 and the MGnify catalogue highlight the semantic side of the model: their diversity ensures that the FastText n-gram table learns biochemically sensible vectors for virtually every k-mer encountered in practice, from both a protein and DNA perspective. We aim to couple these learned representations with simple feed-forward networks and downstream tasks such as protein expression or binding affinity prediction. GRCh38 and ENCODE elements let us test whether positional encodings help discriminate regulatory elements from introns or not: for example, a TATA box that sits 30 bp upstream of a start site from the same 6-mer buried inside an intron. 
+\\~\\
+Finally, the fragmented, length-variable contigs from CAMI (Critical Assessment of Metagenome Intepretation) probe if relative encoders (RoPE/ALiBi) extrapolate across sequence lengths better than sinusoidal encodings, as previously reported. Interestingly, a recent study highlighted that no positional encodings allowed transformers to generalize across varying lengths better than any form of positional inductive biases, yet this is outside the scope of our work (given that we start from a positionally-unaware model already). 
+
+
+
+
+\section*{Methods and architecture}
+
+Our approach decomposes biological sequence embedding into a modular, computationally efficient pipeline. The proposed PE-FastText framework proceeds through the following steps:
+
+\paragraph{Tokenization}
+Raw biological sequences (DNA or protein) are tokenized into overlapping k-mers using a configurable window size (e.g., k = 4–6 for DNA, k = 3–5 for proteins), as previously established in dna2vec \cite{ng2017dna2vec} and ProtVec \cite{asgari2015continuous}. This step captures local compositional patterns reflective of biochemical motifs.
+
+\paragraph{Semantic embedding (FastText)}
+For each k-mer, we retrieve a semantic embedding using a pre-trained FastText model. FastText’s sub-k-mer representation enables robust embeddings even for rare or unseen tokens by aggregating n-gram information, which is particularly useful for metagenomic or non-model organism datasets.
+
+\paragraph{Positional encoding}
+Independently, we compute a position vector for each token. We will experiment with four different positional encoding schemes:
+Sinusoidal encoding \cite{vaswani2017attention}, a deterministic method encoding absolute position, learned positional embeddings, as in BERT \cite{delvin2019bert}, offering flexibility in capturing positional priors,
+Rotary Positional Embeddings (RoPE) \cite{su2024roformer}, which preserve relative distances through complex-space rotations, and 
+Attention with Linear Biases (ALiBi) \cite{press2021train}, which imparts linear position-dependent biases, enabling scalable attention over long contexts.
+
+
+
+The semantic and positional vectors are then either added (maintaining original dimensionality) or concatenated (preserving semantic and positional independence). This results in a set of static, position-aware embeddings we term PE-FastText.
+
+\paragraph{Downstream applications and evaluation}
+The generated embeddings will be evaluated on multiple biologically relevant tasks to benchmark their utility, 
+We will compare our embeddings with vanilla FastText, dna2vec, and ProtVec. Performance will be assessed using standard classification and retrieval metrics (accuracy, precision, recall, F1 score, and AUROC).
+After evaluation of PE-FastText, the embeddings can be used for many downstream analysis tasks such as similarity analyses with FAISS \cite{douze2024faiss} and functional annotation with transformer models such as Evo2 or HyenaDNA.
+
+\paragraph{Interpretation and explainability}
+Because PE-FastText generates static embeddings, interpretation can be performed directly by examining the most influential k-mers and their positional vectors. We will also visualize embedding spaces using dimensionality reduction techniques (e.g., t-SNE or UMAP) to inspect clustering of known functional motifs. For downstream neural models (e.g., Evo2), integrated gradients or attention-weight analysis will be used to backtrack influential sequence positions, further validating the role of positional context in function prediction.
+
+
+
+\begin{figure}[ht]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=11mm,
+    every node/.style={
+        draw, rounded corners=3pt,
+        minimum height=6mm, inner sep=3pt,
+        font=\scriptsize
+    },
+    greatarrow/.style={->,>=latex,thick},
+    seq/.style={fill=gray!15},
+    tok/.style={fill=orange!25},
+    sem/.style={fill=orange!15},
+    pos/.style={fill=green!20},
+    comb/.style={fill=yellow!25},
+    emb/.style={fill=purple!20},
+    faiss/.style={fill=blue!20},
+    evo/.style={fill=red!20},
+    train/.style={fill=cyan!25}
+]
+\node[seq] (seq) {Raw sequence};
+\node[tok,right=14mm of seq] (tok) {k-mer tokeniser};
+\node[sem,right=14mm of tok] (sem) {FastText lookup};
+\node[pos,below=of sem] (pos) {Positional encoder};
+\node[comb,right=18mm of sem] (comb) {Add  or  Concat};
+\node[emb,right=14mm of comb] (emb) {PE-FastText vector};
+
+\node[faiss,above right=7mm and 8mm of emb,anchor=west] (anna) {FAISS similarity};
+\node[evo,below right=7mm and 8mm of emb,anchor=west] (evo) {Evo 2 / HyenaDNA};
+\node[train,below=of emb] (clf) {Classifier / regressor};
+
+% arrows
+\draw[greatarrow] (seq) -- (tok);
+\draw[greatarrow] (tok) -- (sem);
+\draw[greatarrow] (tok) |- (pos);
+\draw[greatarrow] (sem) -- (comb);
+\draw[greatarrow] (pos) -| (comb);
+\draw[greatarrow] (comb) -- (emb);
+
+\draw[greatarrow] (emb) -- (anna);
+\draw[greatarrow] (emb) -- (evo);
+\draw[greatarrow] (emb) -- (clf);
+\end{tikzpicture}}
+\caption{PE-FastText architecture with three outlets: (1) FAISS for fast similarity search, (2) a light supervised head for task-specific training, and (3) a transformer “telescope’’ (Evo 2/HyenaDNA) for deep context.}
+\end{figure}
+
+
+
+
+\paragraph{Typical workflow}
+The user streams a FASTA file and picks k-mer size, positional scheme and fusion rule.
+The system emits one PE-FastText vector per sliding window and writes them straight into a FAISS index (for millisecond neighbour queries) \cite{douze2024faiss}.
+Only windows whose vectors cross a user-defined anomaly or similarity threshold are forwarded to a heavy contextual model such as Evo 2 \cite{brixi2025genome} or HyenaDNA \cite{nguyen2023hyenadna} for single-nucleotide reasoning or sequence generation.
+Because the positional vectors are computed on-the-fly and added after the FastText lookup, the core embedding table remains unchanged; swapping sinusoid for ALiBi therefore takes milliseconds rather than days of retraining.
+
+\begin{figure}[ht]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=12mm,
+    every node/.style={
+        draw, rounded corners=3pt,
+        minimum height=6mm, inner sep=3pt,
+        font=\scriptsize
+    },
+    data/.style={fill=gray!15},
+    trainft/.style={fill=orange!20},
+    pe/.style={fill=green!20},
+    embed/.style={fill=purple!20},
+    faiss/.style={fill=blue!20},
+    filt/.style={fill=yellow!25},
+    evo/.style={fill=red!20},
+    clf/.style={fill=cyan!25},
+    eval/.style={fill=pink!25},
+    greatarrow/.style={->,>=latex,thick}
+]
+\node[data] (data) {Corpora: UniRef, MGnify};
+\node[trainft,right=16mm of data] (ft) {FastText pre-training};
+\node[pe,right=16mm of ft] (pmod) {Attach positional module};
+\node[embed,right=16mm of pmod] (embed) {Embed target genome / proteome};
+
+\node[faiss,above=of embed] (faiss) {Build FAISS index};
+\node[filt,right=16mm of embed] (filt) {Similarity scan and filter top 0.1\%};
+\node[evo,right=16mm of filt] (evo) {Evo 2 deep analysis};
+
+\node[clf,below=of embed] (clf) {Train light model (log-reg, CNN)};
+\node[eval,right=16mm of evo] (eval) {Benchmark and interpretation};
+
+% arrows
+\draw[greatarrow] (data) -- (ft);
+\draw[greatarrow] (ft) -- (pmod);
+\draw[greatarrow] (pmod) -- (embed);
+
+\draw[greatarrow] (embed) -- (faiss);
+\draw[greatarrow] (embed) -- (filt);
+\draw[greatarrow] (embed) -- (clf);
+
+\draw[greatarrow] (faiss) -- (filt);
+\draw[greatarrow] (filt) -- (evo);
+
+\draw[greatarrow] (evo) -- (eval);
+\draw[greatarrow] (clf) -| (eval);
+\end{tikzpicture}}
+\caption{Complete workflow. PE-FastText vectors serve a dual purpose: (i) FAISS-based similarity search; (ii) direct features for training light, explainable classifiers or regressors.}
+\end{figure}
+
+
+\section*{Benchmarks and ablations}
+
+We will split our benchmarks into 2 main sections: unsupervised similarity search ones (and how well the vectors capture functional similarity) and downstream supervised tasks (and how well the vectors can be used for biologically relevant predictions).
+
+\FloatBarrier
+\subsubsection*{Unsupervised benchmarks}
+\FloatBarrier
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.18\textwidth}p{0.18\textwidth}p{0.12\textwidth}p{0.37\textwidth}p{0.15\textwidth}}
+\hline
+\textbf{Benchmark task} & \textbf{Primary corpus} & \textbf{Labels?} & \textbf{Short description / evaluation setup} & \textbf{Metric} \\
+\hline
+\textbf{Protein-family $k$-NN} & \href{https://www.uniprot.org/}{UniRef50} + Pfam annot. & Yes (Pfam) & Query 1,000 random representatives, retrieve top-100 neighbours, check Pfam match rate. & Precision-Recall \\
+\hline
+\textbf{Motif retrieval in regulatory DNA} & ENCODE regulatory elements (GRCh38) & Yes (cCRE class) & Seed each cCRE subclass with 250 motifs, retrieve similar 1 kb windows from genome embedding index. & Precision \\
+\hline
+\textbf{Taxonomic contig similarity} & CAMI II contigs & Yes (species ID) & 5 kb windows embedded; given a query genome, measure how many top-10 hits share the same species. & Precision+Recall \\
+\hline
+\textbf{Rare k-mer anomaly scan} & MGnify proteins & No & Embed 10 M randomly sampled metagenomic peptides; flag top-0.1\% cosine outliers. Visual inspection of align-ability. & Outlier-hit rate \\
+\hline
+\end{tabular}
+\caption{Similarity-search ("microscope") benchmarks for PE-FastText. All tasks are unsupervised at inference time; labels (when present) are used only for evaluation.}
+\label{tab:benchmarks}
+\end{table}
+\FloatBarrier
+
+
+
+\subsubsection*{Supervised benchmarks}
+\FloatBarrier
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.16\textwidth}p{0.14\textwidth}p{0.08\textwidth}p{0.22\textwidth}p{0.14\textwidth}p{0.09\textwidth}}
+\hline
+\textbf{Task} & \textbf{Dataset / split} & \textbf{Labels?} & \textbf{What the labels are} & \textbf{Access point} & \textbf{Metric} \\
+\hline
+\textbf{Enhancer vs.\ background} & \href{https://www.encodeproject.org/}{ENCODE} cCREs & Yes & Regulatory elements and non-regulatory negatives & UCSC download server & ROC-AUC/Pr-Rec \\
+\hline
+\textbf{Variant pathogenicity} & ClinVar (GRCh38) & Yes & Clinically asserted "pathogenic / benign" SNVs & ClinVar \href{https://ftp.ncbi.nlm.nih.gov/pub/clinvar/xml/ClinVarVCVRelease_00-latest.xml.gz}{FTP} & ROC-AUC/Pr-Rec \\
+\hline
+\textbf{Metagenomic binning} & CAMI II & Yes & Species bin ID for 5 kb contigs & CAMI II \href{https://cami-challenge.org/cami-ii/}{website} & ROC-AUC/Pr-Rec \\
+\hline
+\textbf{Long-range expression regression} & Enformer test genes & Yes & GRO-seq log expression per gene & Enformer from the \href{https://www.nature.com/articles/s41592-021-01252-x}{paper} & Spearman $\rho$ \\
+\hline
+\end{tabular}
+\caption{Down-stream supervised benchmarks. PE-FastText vectors from the model trained on the larger task-specific corpus (e.g., MGnify for the Enformer test case) are frozen and fed to a light head (feed forward network), then compared with plain FastText, Word2Vec, dna2vec and larger transformer-based models (ESM2, Evo2).}
+\label{tab:supervised_benchmarks}
+\end{table}
+\FloatBarrier
+
+\subsubsection*{Ablations}
+
+The goal of the ablation campaign is to isolate the contribution of (a) positional information, (b) the way we blend that information with FastText semantics, and (c) biological hyper-parameters such as k-mer size. Every toggle will be evaluated on at least one short-range task and one long-range task (gene-expression regression with the Enformer test set). Metrics are AUROC, Precision/Recall, or Spearman $\rho$ as appropriate.
+
+\FloatBarrier
+\begin{table}[htbp]
+\small
+\centering
+\begin{tabular}{p{0.28\textwidth}p{0.25\textwidth}p{0.42\textwidth}}
+\hline
+\textbf{Ablation axis} & \textbf{Levels to test} & \textbf{Biological rationale / what we learn} \\
+\hline
+\textbf{Positional encoder} & None $\rightarrow$ Sinusoid $\rightarrow$ RoPE $\rightarrow$ ALiBi & Tests how well different encoders recover known spatial constraints in sequences, such as donor/acceptor site spacing in splicing. \\
+\hline
+\textbf{Absolute vs.\ relative position} & Sinusoid (abs) vs.\ RoPE/ALiBi (rel) & Evaluates whether position encodings generalize across varying sequence lengths, as needed for metagenomic contigs. \\
+\hline
+\textbf{Fusion rule} & \emph{Add} (sem + pos) vs.\ \emph{Concat} (sem $\parallel$ pos) & Assesses whether treating sequence identity and position as distinct inputs improves detection of structural/sequence features like protein folds. \\
+\hline
+\textbf{Semantic : positional dims} & 512:0, 512:64, 512:128, 384:384 & Determines the best balance between encoding biochemical content and positional context, which both contribute to variant interpretation. \\
+\hline
+\textbf{$k$-mer size} & 3 mer $\rightarrow$ 5 mer $\rightarrow$ 6 mer $\rightarrow$ 7 mer & Longer $k$-mers can capture more biologically meaningful sequence motifs, but may introduce sparsity at extreme sizes. \\
+\hline
+\end{tabular}
+\caption{Planned ablations. Each will be performed on its most relevant dataset.}
+\label{tab:ablations}
+\end{table}
+
+\FloatBarrier
+
+
+\newpage
+
+\section*{Timeline}
+\FloatBarrier
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.3\textwidth}p{0.7\textwidth}}
+\hline
+\textbf{Weeks} & \textbf{Milestone} \\
+\hline
+\textbf{1 – 3} (May 12 – Jun 1) & Ingest all four corpora, complete deduplication and ambiguity cleaning; produce corpus statistics and a pilot 256-dim FastText run. \\
+\hline
+\textbf{4 – 6} (Jun 2 – Jun 22) & Train the full 512-dim FastText models, add positional encoder prototypes (sinusoid, ALiBi, RoPE), and initial embedding visualizations and/or benchmarks (e.g., on ENCODE to detect TATA boxes). \\
+\hline
+\textbf{7 – 10} (Jun 23 – Jul 20) & Finish large-scale protein training; run all benchmarks and the ablation matrix (see previous section); draft the methods and preliminary results for the report. \\
+\hline
+\textbf{11 – 15} (Jul 21 – Aug 19) & Implement advanced features (FAISS, Evo2 interpretability of regions), rerun benchmarks, and polish the final manuscript. \\
+\hline
+\end{tabular}
+\caption{Project timeline and milestones}
+\label{tab:timeline}
+\end{table}
+\FloatBarrier
+
+
+
+
+\section*{Conclusion}
+\FloatBarrier
+
+FastText’s subword principle has already proved its worth in natural language and in bioinformatics \cite{le2019classifying, jin2022protplat}. By adding positional awareness, we evolve it from a bag-of-motifs to a true sequence model that respects biological context. PE-FastText offers a lightweight way to highlight candidate regions, leaving deeper analysis to transformer models like Evo2 or ESM2—providing a fast, accessible tool for large-scale biological sequence screening.
+\FloatBarrier
+
+\newpage
+
+
+
+
+\printbibliography
+ChatGPT was used for writing and correcting this report.
+
+\end{document}
