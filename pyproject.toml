@@ -19,6 +19,7 @@ modal = "^0.57.2"
 requests = "^2.31.0"
 biopython = "^1.83"
 torch = {version="^2.1.0", optional=true}
+datasets = "^2.18.0"
 
 [tool.poetry.extras]
 # Torch is optional because it is only needed for RoPE (complex mul) or GPU acceleration.
