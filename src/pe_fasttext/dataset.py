@@ -1,17 +1,8 @@
 """Dataset download + preprocessing utilities for PE-FastText."""
 from __future__ import annotations
 
-import gzip
-import os
-import shutil
-import subprocess
-import tarfile
-from functools import partial
 from pathlib import Path
 from typing import Iterable, Iterator, TypedDict
-
-import requests
-from tqdm import tqdm  # type: ignore
 
 from .tokenization import fasta_stream
 
@@ -37,21 +28,11 @@ CHUNK = 1 << 20  # 1 MiB
 
 
 def _download_file(url: str, dst: Path, *, show_progress: bool = True):
-    dst.parent.mkdir(parents=True, exist_ok=True)
+    """Download file using shared utility."""
+    from .utils import download_file
     if dst.exists():
         return dst
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        bar = tqdm(total=total, unit="B", unit_scale=True) if show_progress else None
-        with open(dst, "wb") as fh:
-            for chunk in r.iter_content(CHUNK):
-                fh.write(chunk)
-                if bar:
-                    bar.update(len(chunk))
-        if bar:
-            bar.close()
-    return dst
+    return download_file(url, dst)
 
 
 def download_dataset(name: str, out_dir: str | Path = "data") -> Path:
@@ -67,9 +48,8 @@ def download_dataset(name: str, out_dir: str | Path = "data") -> Path:
     if dst.suffix == ".gz":
         decompressed = dst.with_suffix("")  # remove .gz
         if not decompressed.exists():
-            print(f"Decompressing {dst} -> {decompressed}")
-            with gzip.open(dst, "rb") as f_in, open(decompressed, "wb") as f_out:
-                shutil.copyfileobj(f_in, f_out)
+            from .utils import decompress_file
+            decompress_file(dst, decompressed)
         return decompressed
     return dst
 

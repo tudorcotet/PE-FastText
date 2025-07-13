@@ -61,7 +61,6 @@ DATASETS = {
     )
     # TODO: Add more biological sequence datasets here
     # Examples of datasets that could be added:
-    # - MGnify protein catalog (requires significant storage ~120GB)
     # - CAMI II simulated metagenomes
     # - Custom protein/DNA sequence collections
     # - Specialized genome assemblies

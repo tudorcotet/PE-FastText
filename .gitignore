@@ -36,3 +36,8 @@ ENV/
 .vscode/
 *.swp
 *.swo 
+
+CLAUDE.md
+.claude/
+.specstory/
+.mypy_chache

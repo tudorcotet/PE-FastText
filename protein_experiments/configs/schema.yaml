@@ -1,0 +1,60 @@
+# Experiment Configuration Schema
+# This file documents the structure of experiment configuration files
+
+# Task name - one of: fluorescence, stability, mpp, beta_lactamase_complete, ssp
+task: string
+
+# Embedder configuration
+embedder:
+  # Type of embedder: fasttext or esm2
+  type: string
+  
+  # FastText-specific options
+  model_path: string  # Path to save/load model
+  tokenization: string  # "kmer" or "residue"
+  k: integer  # k-mer size (only for kmer tokenization)
+  dim: integer  # Embedding dimension
+  
+  # Position encoding options (FastText only)
+  pos_encoder: string  # Optional: sinusoid, learned, rope, alibi, ft_alibi
+  fusion: string  # "add" or "concat" (only with pos_encoder)
+  
+  # Training parameters (FastText only)
+  train_params:
+    epochs: integer
+    window: integer
+    min_count: integer
+    sg: integer  # 0 for CBOW, 1 for skip-gram
+  
+  # ESM2-specific options
+  model_name: string  # HuggingFace model name
+  device: string  # "cuda" or "cpu"
+  batch_size: integer
+  layer: integer  # Which layer to extract (-1 for last)
+  pooling: string  # "mean", "cls", or "max"
+
+# Predictor configuration
+predictor:
+  # Type: rf (Random Forest) or linear (Ridge/Logistic)
+  type: string
+  
+  # Random Forest options
+  n_estimators: integer
+  max_depth: integer
+  
+  # Linear model options
+  alpha: float  # Ridge regularization
+  C: float  # Logistic regularization
+  
+  # Common options
+  seed: integer
+
+# Data configuration
+data:
+  train_size: float  # Fraction of training data to use (0-1)
+  val_split: float  # Fraction of train for validation (0-1)
+  max_length: integer  # Maximum sequence length (optional)
+  seed: integer  # Random seed for splitting
+
+# Output directory for results
+output_dir: string

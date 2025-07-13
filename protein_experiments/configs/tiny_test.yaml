@@ -1,0 +1,28 @@
+# Tiny configuration for quick testing
+task: fluorescence
+
+embedder:
+  type: fasttext
+  model_path: models/test_model.bin
+  tokenization: kmer
+  k: 3  # Smaller k-mer for faster training
+  dim: 32  # Smaller dimension
+  train_params:
+    epochs: 2  # Fewer epochs
+    window: 3
+    min_count: 1
+    sg: 1
+
+predictor:
+  type: rf
+  n_estimators: 10  # Fewer trees
+  max_depth: 5
+  seed: 42
+
+data:
+  train_size: 0.1  # Only 10% of data
+  val_split: 0.2
+  max_length: 200  # Shorter sequences
+  seed: 42
+
+output_dir: results/test

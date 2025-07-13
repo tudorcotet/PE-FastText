@@ -71,16 +71,6 @@ def embed_cli(
     print(f"Saved embeddings -> {index_out}")
 
 
-@app.command("benchmark")
-def benchmark_cli():
-    from .benchmark import run_benchmarks
-    run_benchmarks()
-
-
-@app.command("ablation")
-def ablation_cli():
-    from .ablation import run_ablation
-    run_ablation()
 
 
 if __name__ == "__main__":

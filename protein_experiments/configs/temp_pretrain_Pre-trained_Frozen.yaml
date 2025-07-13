@@ -1,0 +1,20 @@
+data:
+  max_length: 200
+  seed: 42
+  train_size: 0.1
+  val_split: 0.2
+embedder:
+  dim: 128
+  fine_tune: false
+  k: 6
+  model_path: models/pretrained_frozen.bin
+  pretrained_path: models/mock_uniref50_pretrained.bin
+  tokenization: kmer
+  type: fasttext
+output_dir: results/pretrain_comparison
+predictor:
+  max_depth: 5
+  n_estimators: 10
+  seed: 42
+  type: rf
+task: fluorescence

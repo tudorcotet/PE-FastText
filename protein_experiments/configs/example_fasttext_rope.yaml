@@ -1,0 +1,30 @@
+# FastText with RoPE positional encoding
+task: fluorescence
+
+embedder:
+  type: fasttext
+  model_path: models/fluorescence_fasttext_rope.bin
+  tokenization: kmer
+  k: 6
+  dim: 128
+  pos_encoder: rope
+  fusion: add
+  train_params:
+    epochs: 10
+    window: 5
+    min_count: 1
+    sg: 1
+
+predictor:
+  type: rf
+  n_estimators: 100
+  max_depth: 20
+  seed: 42
+
+data:
+  train_size: 0.5
+  val_split: 0.1
+  max_length: 500
+  seed: 42
+
+output_dir: results/rope

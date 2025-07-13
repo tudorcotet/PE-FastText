@@ -30,8 +30,6 @@ gpu = ["torch"]
 peft-download = "pe_fasttext.cli:download_datasets_cli"
 peft-train = "pe_fasttext.cli:train_fasttext_cli"
 peft-embed = "pe_fasttext.cli:embed_cli"
-peft-bench = "pe_fasttext.cli:benchmark_cli"
-peft-ablate = "pe_fasttext.cli:ablation_cli"
 
 [build-system]
 requires = ["poetry-core>=1.7.0"]

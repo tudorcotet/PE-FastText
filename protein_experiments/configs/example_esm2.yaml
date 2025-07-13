@@ -1,0 +1,24 @@
+# ESM2 protein language model configuration
+task: fluorescence
+
+embedder:
+  type: esm2
+  model_name: facebook/esm2_t6_8M_UR50D
+  device: cpu
+  batch_size: 32
+  layer: -1  # Last layer
+  pooling: mean
+
+predictor:
+  type: rf
+  n_estimators: 100
+  max_depth: 20
+  seed: 42
+
+data:
+  train_size: 0.5
+  val_split: 0.1
+  max_length: 500
+  seed: 42
+
+output_dir: results/esm2

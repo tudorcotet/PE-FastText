@@ -62,6 +62,7 @@ def train_fasttext(
         corpus_iter,
         total_examples=model.corpus_count,
         epochs=epochs,
+        compute_loss=True,
         callbacks=[LossLogger()],
     )
     return model

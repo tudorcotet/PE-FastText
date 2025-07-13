@@ -1,0 +1,16 @@
+# Core dependencies
+numpy>=1.21.0
+scikit-learn>=0.24.0
+pyyaml>=5.4.0
+tqdm>=4.62.0
+
+# Data
+datasets>=2.0.0
+
+# FastText
+gensim>=4.0.0
+
+# Optional: Deep learning for ESM2
+# Uncomment these lines if you want to use ESM2 embeddings:
+# torch>=1.9.0
+# transformers>=4.20.0

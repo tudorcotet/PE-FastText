@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 
@@ -103,10 +103,52 @@ class ALiBiEncoding(BasePositionalEncoding):
         return positions * slopes  # linear scaling
 
 
+class FastTextALiBi(BasePositionalEncoding):
+    """FastText-compatible ALiBi surrogate using residue-level distances.
+    
+    This implementation computes a bias based on residue positions and
+    broadcasts it to the embedding dimension, suitable for adding to
+    FastText embeddings.
+    """
+    
+    name = "ft_alibi"
+    
+    def __init__(self, dim: int, slope: float = 0.1):
+        super().__init__(dim)
+        self.slope = slope
+    
+    def __call__(self, positions: np.ndarray | list[int]) -> np.ndarray:
+        """Compute ALiBi-style positional encoding.
+        
+        For each position, we compute a weighted average of distances
+        to all other positions, then replicate to embedding dimension.
+        """
+        positions = np.asarray(positions, dtype=np.float32)
+        n_pos = len(positions)
+        
+        # For efficiency with long sequences, we use a local window
+        # This approximates the full ALiBi computation but with O(L) memory
+        window_size = min(100, n_pos)  # Limit context window
+        
+        # Compute local biases
+        biases = np.zeros(n_pos, dtype=np.float32)
+        for i in range(n_pos):
+            # Compute distances to nearby positions
+            start = max(0, i - window_size // 2)
+            end = min(n_pos, i + window_size // 2)
+            local_positions = positions[start:end]
+            distances = np.abs(positions[i] - local_positions)
+            # Average distance weighted by slope
+            biases[i] = -self.slope * distances.mean()
+        
+        # Replicate to embedding dimension
+        return np.tile(biases[:, None], (1, self.dim))
+
+
 # map encoder names to their classes
 ENCODERS = {  # type: ignore
     cls.name: cls
-    for cls in [SinusoidalEncoding, LearnedPositionalEncoding, RoPEEncoding, ALiBiEncoding]
+    for cls in [SinusoidalEncoding, LearnedPositionalEncoding, RoPEEncoding, ALiBiEncoding, FastTextALiBi]
 }
 
 
