@@ -51,9 +51,9 @@ class ESM2Embedder(BaseEmbedder):
         # Cache embedding dimension
         self._embedding_dim = self.model.config.hidden_size
     
-    def embed(self, sequences: List[str], show_progress: bool = True) -> np.ndarray:
+    def embed(self, sequences: List[str], show_progress: bool = True, average_sequences: bool = True) -> np.ndarray:
         """Generate embeddings for sequences."""
-        embeddings = []
+        all_embs = []
         
         # Process in batches
         n_batches = (len(sequences) + self.batch_size - 1) // self.batch_size
@@ -76,18 +76,31 @@ class ESM2Embedder(BaseEmbedder):
                 ).to(self.device)
                 
                 # Get embeddings
-                outputs = self.model(**inputs)
+                outputs = self.model(**inputs, output_hidden_states=True)
                 
+                # Extract the correct layer's hidden states
                 if self.layer == -1:
                     hidden_states = outputs.last_hidden_state
                 else:
                     hidden_states = outputs.hidden_states[self.layer]
                 
-                # Pool embeddings
-                batch_embeddings = self._pool(hidden_states, inputs["attention_mask"])
-                embeddings.extend(batch_embeddings.cpu().numpy())
+                # If we need per-residue embeddings, we handle it here
+                if not average_sequences:
+                    # Remove special tokens (CLS, EOS) from each sequence's embeddings
+                    for j, seq in enumerate(batch_sequences):
+                        # Get the length of the original sequence without padding
+                        seq_len = len(self.tokenizer.tokenize(seq))
+                        # Extract embeddings, removing [CLS] and [SEP] tokens
+                        all_embs.append(hidden_states[j, 1:seq_len+1].cpu().numpy())
+                else:
+                    # Pool embeddings to get one vector per sequence
+                    batch_embeddings = self._pool(hidden_states, inputs["attention_mask"])
+                    all_embs.extend(batch_embeddings.cpu().numpy())
         
-        return np.array(embeddings)
+        if not average_sequences:
+            return all_embs # Return list of arrays with variable length
+
+        return np.array(all_embs)
     
     def _pool(self, hidden_states, attention_mask):
         """Pool token embeddings to sequence embeddings."""

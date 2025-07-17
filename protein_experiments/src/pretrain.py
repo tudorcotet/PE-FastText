@@ -1,6 +1,7 @@
 """UniRef50 pre-training utilities."""
 
 import logging
+import time
 from pathlib import Path
 from typing import List, Iterator, Optional
 import numpy as np
@@ -36,60 +37,80 @@ class UniRef50Loader:
         """
         logger.info(f"Loading UniRef50 (split={self.train_split}, max={self.max_sequences})")
         
-        # Load dataset
-        if streaming:
-            # For streaming, we can't use percentage splits directly
-            # Instead, we'll sample based on train_split probability
-            dataset = load_dataset(
-                "agemagician/uniref50",
-                split="train",
-                streaming=True
-            )
-            
-            # Use a simple sampling strategy
-            count = 0
-            skip_count = 0
-            sample_rate = int(1.0 / self.train_split) if self.train_split < 1.0 else 1
-            
-            for idx, example in enumerate(dataset):
-                if self.max_sequences and count >= self.max_sequences:
-                    break
-                
-                # Sample based on train_split
-                if idx % sample_rate == 0:
-                    sequence = example.get("sequence", "")
-                    if sequence:
-                        yield sequence
-                        count += 1
-                else:
-                    skip_count += 1
-                    
-                # Log progress periodically
-                if (count + skip_count) % 10000 == 0:
-                    total_processed = count + skip_count
-                    logger.info(f"Progress: {count:,} sequences loaded, {skip_count:,} skipped (total: {total_processed:,})")
-                    if self.max_sequences:
-                        pct = (count / self.max_sequences) * 100
-                        logger.info(f"  → {pct:.1f}% of target sequences collected")
-        else:
-            # For non-streaming, use percentage split
-            split_pct = max(1, int(self.train_split * 100))
-            dataset = load_dataset(
-                "agemagician/uniref50",
-                split=f"train[:{split_pct}%]"
-            )
-            
-            count = 0
-            for example in dataset:
-                if self.max_sequences and count >= self.max_sequences:
-                    break
-                    
-                sequence = example.get("sequence", "")
-                if sequence:
-                    yield sequence
-                    count += 1
+        # Load dataset with retry logic for rate limiting
+        max_retries = 5
+        retry_delay = 60  # Start with 60 seconds
         
-        logger.info(f"Loaded {count} sequences from UniRef50")
+        for retry in range(max_retries):
+            try:
+                if streaming:
+                    # For streaming, we can't use percentage splits directly
+                    # Instead, we'll sample based on train_split probability
+                    dataset = load_dataset(
+                        "agemagician/uniref50",
+                        split="train",
+                        streaming=True
+                    )
+                    
+                    # Use a simple sampling strategy
+                    count = 0
+                    skip_count = 0
+                    sample_rate = int(1.0 / self.train_split) if self.train_split < 1.0 else 1
+                    
+                    for idx, example in enumerate(dataset):
+                        if self.max_sequences and count >= self.max_sequences:
+                            break
+                        
+                        # Sample based on train_split
+                        if idx % sample_rate == 0:
+                            sequence = example.get("sequence", "")
+                            if sequence:
+                                yield sequence
+                                count += 1
+                        else:
+                            skip_count += 1
+                            
+                        # Log progress periodically
+                        if (count + skip_count) % 10000 == 0:
+                            total_processed = count + skip_count
+                            logger.info(f"Progress: {count:,} sequences loaded, {skip_count:,} skipped (total: {total_processed:,})")
+                            if self.max_sequences:
+                                pct = (count / self.max_sequences) * 100
+                                logger.info(f"  → {pct:.1f}% of target sequences collected")
+                else:
+                    # For non-streaming, use percentage split
+                    split_pct = max(1, int(self.train_split * 100))
+                    dataset = load_dataset(
+                        "agemagician/uniref50",
+                        split=f"train[:{split_pct}%]"
+                    )
+                    
+                    count = 0
+                    for example in dataset:
+                        if self.max_sequences and count >= self.max_sequences:
+                            break
+                            
+                        sequence = example.get("sequence", "")
+                        if sequence:
+                            yield sequence
+                            count += 1
+                
+                logger.info(f"Loaded {count} sequences from UniRef50")
+                return  # Success, exit retry loop
+                
+            except Exception as e:
+                if "429" in str(e) or "Too Many Requests" in str(e):
+                    if retry < max_retries - 1:
+                        logger.warning(f"Rate limited by HuggingFace. Waiting {retry_delay} seconds before retry {retry + 1}/{max_retries}...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        logger.error("Max retries reached. Please try again later.")
+                        raise
+                else:
+                    # Not a rate limit error, re-raise
+                    raise
 
 
 def pretrain_fasttext(

@@ -30,7 +30,9 @@ class PEFastText:
         # Build positional encoder
         if pos_dim is None:
             pos_dim = self.dim_sem  # keep same size if add, else can differ
-        self.pos_enc: BasePositionalEncoding = build_positional_encoder(pos_encoder, pos_dim)
+        self.pos_enc: BasePositionalEncoding = build_positional_encoder(
+            pos_encoder, pos_dim
+        )
         self.fusion: FusionRule = fusion
 
         if fusion == "add" and pos_dim != self.dim_sem:
@@ -57,6 +59,35 @@ class PEFastText:
         else:  # concat
             out = np.concatenate([sem, pos], axis=-1)
         return out
+
+    def embed(self, sequences: list[str], k: int = 5, average_sequences: bool = False, show_progress: bool = False) -> list[np.ndarray] | np.ndarray:
+        """Embed a list of sequences."""
+        from .utils import kmerize
+        from tqdm import tqdm
+
+        all_embeddings = []
+        iterator = tqdm(sequences, desc="Embedding sequences") if show_progress else sequences
+
+        for seq in iterator:
+            tokens = kmerize(seq, k)
+            if not tokens:
+                if average_sequences:
+                    all_embeddings.append(np.zeros(self.dim_total))
+                else:
+                    all_embeddings.append(np.zeros((0, self.dim_total)))
+                continue
+
+            positions = list(range(len(tokens)))
+            token_embs = self.embed_tokens(tokens, positions)
+            
+            if average_sequences:
+                all_embeddings.append(token_embs.mean(axis=0))
+            else:
+                all_embeddings.append(token_embs)
+        
+        if average_sequences:
+            return np.array(all_embeddings)
+        return all_embeddings
 
     def embed_fasta(self, fasta_path: str, k: int = 5) -> np.ndarray:
         """Embed entire FASTA file into matrix (N tokens x dim).

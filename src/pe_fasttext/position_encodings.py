@@ -43,7 +43,7 @@ class SinusoidalEncoding(BasePositionalEncoding):
 
 
 class LearnedPositionalEncoding(BasePositionalEncoding):
-    """Simple learned embedding table (numpy version)."""
+    """Positional encodings as a learnable embedding matrix."""
 
     name = "learned"
 
@@ -53,7 +53,8 @@ class LearnedPositionalEncoding(BasePositionalEncoding):
         # random init
         self.table = np.random.randn(max_len, dim).astype(np.float32)
 
-    def __call__(self, positions: np.ndarray | list[int]) -> np.ndarray:
+    def __call__(self, positions: list[int]) -> np.ndarray:
+        """Just look up the embeddings."""
         positions = np.asarray(positions)
         if positions.max() >= self.max_len:
             # dynamically grow

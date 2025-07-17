@@ -1,6 +1,6 @@
 """FastText embedder with optional positional encoding support."""
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
@@ -43,19 +43,29 @@ class FastTextEmbedder(BaseEmbedder):
         self.pos_encoder = config.get('pos_encoder')
         self.fusion = config.get('fusion', 'add')
         self.train_params = config.get('train_params', {})
+        self.save_model = config.get('save_model', True)
+        self.seed = config.get('seed', 42)
         
         self._model = None
         self._pe_model = None
     
     def _tokenize(self, sequences: List[str]) -> List[List[str]]:
-        """Tokenize sequences based on tokenization method."""
+        """Tokenize sequences based on tokenization method.
+        
+        For proteins, residue tokenization uses amino acids.
+        For k-mer tokenization, we use overlapping k-mers of amino acids.
+        """
         if self.tokenization == "residue":
             return [list(seq) for seq in sequences]
         else:  # kmer
             tokenized = []
             for seq in sequences:
-                tokens = [seq[i:i+self.k] for i in range(len(seq) - self.k + 1)]
-                tokenized.append(tokens)
+                if len(seq) >= self.k:
+                    tokens = [seq[i:i+self.k] for i in range(len(seq) - self.k + 1)]
+                    tokenized.append(tokens)
+                else:
+                    # For sequences shorter than k, use the full sequence
+                    tokenized.append([seq])
             return tokenized
     
     def train(self, sequences: List[str]):
@@ -65,6 +75,10 @@ class FastTextEmbedder(BaseEmbedder):
             return
         
         # Check if we should use pre-trained model
+        if self.pretrained_path:
+            if not self.pretrained_path.exists():
+                raise FileNotFoundError(f"Pretrained model not found at {self.pretrained_path}")
+            
         if self.pretrained_path and self.pretrained_path.exists():
             if not self.fine_tune:
                 # Just copy the pre-trained model
@@ -93,7 +107,7 @@ class FastTextEmbedder(BaseEmbedder):
                 # Fine-tune
                 total_examples = len(tokenized)
                 model.train(tokenized, total_examples=total_examples, 
-                           epochs=self.train_params.get('epochs', 10))
+                           epochs=self.train_params.get('epochs', 10), seed=self.seed)
         else:
             # Train from scratch
             logger.info(f"Training FastText model from scratch ({self.tokenization} tokenization)")
@@ -106,69 +120,86 @@ class FastTextEmbedder(BaseEmbedder):
                 'min_count': 1,
                 'sg': 1,  # Skip-gram
                 'epochs': 10,
-                'workers': 4
+                'workers': 4,
+                'seed': self.seed
             }
             params.update(self.train_params)
             
             model = train_fasttext(corpus_iter=tokenized, **params)
+
+        # After training from scratch or fine-tuning, store the model in memory
+        self._model = model
         
-        # Save model
-        self.model_path.parent.mkdir(parents=True, exist_ok=True)
-        model.save(str(self.model_path))
-        logger.info(f"Model saved to {self.model_path}")
+        # Save model to disk if requested
+        if self.save_model:
+            self.model_path.parent.mkdir(parents=True, exist_ok=True)
+            model.save(str(self.model_path))
+            logger.info(f"Model saved to {self.model_path}")
     
     def _load_models(self):
         """Load FastText and optionally PE-FastText models."""
-        if self._model is None:
-            if not self.model_path.exists():
-                raise FileNotFoundError(f"Model not found at {self.model_path}. Train first.")
-            
-            if self.pos_encoder:
+        if self._model is not None:
+            # Model is already in memory
+            if self.pos_encoder and self._pe_model is None:
+                # If PE is needed, wrap the in-memory model
                 self._pe_model = PEFastText(
-                    fasttext_path=str(self.model_path),
+                    fasttext_model=self._model,
                     pos_encoder=self.pos_encoder,
-                    fusion=self.fusion
+                    fusion=self.fusion,
                 )
-                self._model = self._pe_model.ft
-            else:
-                self._model = FastText.load(str(self.model_path))
+            return
+
+        if not self.model_path.exists():
+            raise FileNotFoundError(f"Model not found at {self.model_path}. Train first.")
+        
+        if self.pos_encoder:
+            self._pe_model = PEFastText(
+                fasttext_path=str(self.model_path),
+                pos_encoder=self.pos_encoder,
+                fusion=self.fusion,
+            )
+            self._model = self._pe_model.ft
+        else:
+            self._model = FastText.load(str(self.model_path))
     
-    def embed(self, sequences: List[str], show_progress: bool = True) -> np.ndarray:
+    def embed(self, sequences: List[str], show_progress: bool = True, average_sequences: bool = True) -> Union[np.ndarray, List[np.ndarray]]:
         """Generate embeddings for sequences."""
         self._load_models()
         
+        if self._pe_model:
+            # The PE-FastText model handles tokenization and averaging internally
+            return self._pe_model.embed(
+                sequences, 
+                k=self.k, 
+                average_sequences=average_sequences, 
+                show_progress=show_progress
+            )
+
+        # Original logic for non-PE models
         embeddings = []
         iterator = tqdm(sequences, desc="Generating embeddings") if show_progress else sequences
         
         for seq in iterator:
-            if self.tokenization == "residue":
-                tokens = list(seq)
-            else:
-                tokens = [seq[i:i+self.k] for i in range(len(seq) - self.k + 1)]
+            tokens = self._tokenize([seq])[0] # Use existing tokenizer
             
-            if len(tokens) == 0:
-                # Handle empty sequences
-                embeddings.append(np.zeros(self.embedding_dim))
+            if not tokens:
+                empty_emb = np.zeros(self.embedding_dim)
+                if not average_sequences:
+                    empty_emb = np.zeros((0, self.embedding_dim))
+                embeddings.append(empty_emb)
                 continue
             
-            if self._pe_model:
-                # Use PE-FastText
-                positions = list(range(len(tokens)))
-                emb = self._pe_model.embed_tokens(tokens, positions)
-                embeddings.append(emb.mean(axis=0))
+            token_embs = self._model.wv[tokens]
+            
+            if average_sequences:
+                embeddings.append(token_embs.mean(axis=0))
             else:
-                # Regular FastText
-                token_embs = []
-                for token in tokens:
-                    if token in self._model.wv:
-                        token_embs.append(self._model.wv[token])
-                
-                if token_embs:
-                    embeddings.append(np.mean(token_embs, axis=0))
-                else:
-                    embeddings.append(np.zeros(self.embedding_dim))
+                embeddings.append(token_embs)
         
-        return np.array(embeddings)
+        if average_sequences:
+            return np.array(embeddings)
+        else:
+            return embeddings
     
     @property
     def embedding_dim(self) -> int:
