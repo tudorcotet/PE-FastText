@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 import json
 import requests
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore[import]
 
 # Create Modal app
 app = modal.App("pe-fasttext-complete")
@@ -16,7 +16,7 @@ app = modal.App("pe-fasttext-complete")
 # Create volumes
 dataset_volume = modal.Volume.from_name("pe-fasttext-datasets", create_if_missing=True)
 model_volume = modal.Volume.from_name("pe-fasttext-models", create_if_missing=True)
-results_volume = modal.Volume.from_name("pe-fasttext-results6", create_if_missing=True)
+results_volume = modal.Volume.from_name("pe-fasttext-results7", create_if_missing=True)
 
 # Define the image with all dependencies
 image = (
@@ -36,22 +36,23 @@ image = (
         "pyarrow>=14.0.0",
         "xgboost>=1.5.0",
         "typing-extensions",
+        "statannotations>=0.5.0",
     )
     # Add PE_FastText source files
-    .copy_local_file("../src/pe_fasttext/__init__.py", "/pe_fasttext/__init__.py")
-    .copy_local_file("../src/pe_fasttext/model.py", "/pe_fasttext/model.py")
-    .copy_local_file("../src/pe_fasttext/tokenization.py", "/pe_fasttext/tokenization.py")
-    .copy_local_file("../src/pe_fasttext/position_encodings.py", "/pe_fasttext/position_encodings.py")
-    .copy_local_file("../src/pe_fasttext/fasttext_utils.py", "/pe_fasttext/fasttext_utils.py")
-    .copy_local_file("../src/pe_fasttext/utils.py", "/pe_fasttext/utils.py")
+    .add_local_file("../src/pe_fasttext/__init__.py", "/pe_fasttext/__init__.py")
+    .add_local_file("../src/pe_fasttext/model.py", "/pe_fasttext/model.py")
+    .add_local_file("../src/pe_fasttext/tokenization.py", "/pe_fasttext/tokenization.py")
+    .add_local_file("../src/pe_fasttext/position_encodings.py", "/pe_fasttext/position_encodings.py")
+    .add_local_file("../src/pe_fasttext/fasttext_utils.py", "/pe_fasttext/fasttext_utils.py")
+    .add_local_file("../src/pe_fasttext/utils.py", "/pe_fasttext/utils.py")
     # Add protein experiments files
-    .copy_local_file("src/__init__.py", "/protein_experiments/src/__init__.py")
-    .copy_local_file("src/data.py", "/protein_experiments/src/data.py")
-    .copy_local_file("src/embedders/__init__.py", "/protein_experiments/src/embedders/__init__.py")
-    .copy_local_file("src/embedders/base.py", "/protein_experiments/src/embedders/base.py")
-    .copy_local_file("src/embedders/fasttext.py", "/protein_experiments/src/embedders/fasttext.py")
-    .copy_local_file("src/embedders/esm2.py", "/protein_experiments/src/embedders/esm2.py")
-    .copy_local_file("src/experiment.py", "/protein_experiments/src/experiment.py")
+    .add_local_file("src/__init__.py", "/protein_experiments/src/__init__.py")
+    .add_local_file("src/data.py", "/protein_experiments/src/data.py")
+    .add_local_file("src/embedders/__init__.py", "/protein_experiments/src/embedders/__init__.py")
+    .add_local_file("src/embedders/base.py", "/protein_experiments/src/embedders/base.py")
+    .add_local_file("src/embedders/fasttext.py", "/protein_experiments/src/embedders/fasttext.py")
+    .add_local_file("src/embedders/esm2.py", "/protein_experiments/src/embedders/esm2.py")
+    .add_local_file("src/experiment.py", "/protein_experiments/src/experiment.py")
 )
 
 
@@ -238,7 +239,7 @@ def pretrain_uniref50_fasta(
     sys.path.insert(0, "/")
     sys.path.insert(0, "/protein_experiments")
     
-    from pe_fasttext.fasttext_utils import train_fasttext
+    from pe_fasttext.fasttext_utils import train_fasttext  # type: ignore[import]
     from pathlib import Path
     import logging
     
@@ -290,7 +291,7 @@ def pretrain_uniref50_fasta(
     print(f"Total tokens: {sum(len(seq) for seq in tokenized):,}")
     
     # Create epoch callback to save model after each epoch
-    from gensim.models.callbacks import CallbackAny2Vec
+    from gensim.models.callbacks import CallbackAny2Vec  # type: ignore[import]
     
     class EpochSaver(CallbackAny2Vec):
         def __init__(self, output_path):
@@ -305,8 +306,8 @@ def pretrain_uniref50_fasta(
             model_volume.commit()
     
     # Train model
-    from pe_fasttext.fasttext_utils import LossLogger
-    from gensim.models.fasttext import FastText
+    from pe_fasttext.fasttext_utils import LossLogger # type: ignore[import]
+    from gensim.models.fasttext import FastText  # type: ignore[import]
     
     model = FastText(
         vector_size=dim,
@@ -515,12 +516,12 @@ def generate_all_experiment_configs() -> List[Dict[str, Any]]:
     kmer_pretrained_model = "uniref50_pretrained_10pct_kmer.epoch6.bin"
     
     # All parameter combinations
-    fine_tuning = [True, False]
+    fine_tuning = [False]
     pos_encoders = ["sinusoid", "learned", "rope", "alibi", "ft_alibi", None]  # None for baseline
     fusions = ["add", "concatenate"]
     predictors = ["rf", "mlp", "xgboost"]
     tasks = ["fluorescence", "stability", "mpp", "beta_lactamase_complete", "ssp", "deeploc"]
-    seeds = [42, 123, 456, 789, 1011]
+    seeds = [1, 2, 3, 4, 5]
     
     configs = []
     config_id = 0
@@ -757,19 +758,18 @@ def run_all_experiments():
         json.dump({"experiments": results, "summary": summary}, f, indent=2)
     
     results_volume.commit()
-    print(f"Completed {len(results)} experiments!")
+    print(f"Completed all {len(results)} experiments!")
     return summary
 
 
 @app.function(
     image=image,
     volumes={"/results": results_volume},
-    timeout=86400
-
+    timeout = 86400
 )
 def create_summary_parquet():
     """Create a single Parquet file from all summary JSONs."""
-    import pandas as pd
+    import pandas as pd  # type: ignore[import]
     from pathlib import Path
     import json
 

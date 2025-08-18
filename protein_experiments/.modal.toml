@@ -1,5 +1,0 @@
-# Modal configuration
-[default]
-# Add your Modal token here after running: modal token new
-# token_id = "your-token-id"
-# token_secret = "your-token-secret"

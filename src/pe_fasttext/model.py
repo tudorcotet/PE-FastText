@@ -60,7 +60,7 @@ class PEFastText:
             out = np.concatenate([sem, pos], axis=-1)
         return out
 
-    def embed(self, sequences: list[str], k: int = 5, average_sequences: bool = False, show_progress: bool = False) -> list[np.ndarray] | np.ndarray:
+    def embed(self, sequences: list[str], k: int = 5, average_sequences: bool = False, show_progress: bool = False, tokenization: str = "kmer") -> list[np.ndarray] | np.ndarray:
         """Embed a list of sequences."""
         from .utils import kmerize
         from tqdm import tqdm
@@ -69,7 +69,11 @@ class PEFastText:
         iterator = tqdm(sequences, desc="Embedding sequences") if show_progress else sequences
 
         for seq in iterator:
-            tokens = kmerize(seq, k)
+            if tokenization == 'residue':
+                tokens = list(seq)
+            else:
+                tokens = kmerize(seq, k)
+            
             if not tokens:
                 if average_sequences:
                     all_embeddings.append(np.zeros(self.dim_total))

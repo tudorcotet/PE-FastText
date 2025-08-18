@@ -1,5 +1,0 @@
-# Modal-specific requirements
-modal>=0.5.0
-
-# Include all other requirements
--r requirements.txt

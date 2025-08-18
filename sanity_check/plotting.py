@@ -1,54 +1,49 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from adjustText import adjust_text
+import numpy as np
 
-# --- Plotting Configuration ---
-sns.set_theme(style="ticks", palette="viridis")
-FIG_SIZE = (18, 10)
-TITLE_FONT_SIZE = 16
-AXIS_FONT_SIZE = 12
+# --- Plotting configuration ---
+CUSTOM_PALETTE = ["#414A87", "#CCA53D", "#284C64", "#6E9E5B", "#7F2239"]
+sns.set_style("whitegrid")
+sns.set_context("talk")
 
-def plot_umap_comparison(
-    embeds_dict: dict,
-    labels: list,
-    output_path: Path,
-    main_title: str,
-):
-    """
-    Creates and saves a UMAP comparison plot for multiple models.
-    """
-    n_models = len(embeds_dict)
-    fig, axes = plt.subplots(1, n_models, figsize=(6 * n_models, 5))
-    if n_models == 1:
-        axes = [axes]  # Make it iterable
-
+def plot_umap_comparison(embeds_dict: dict, labels: np.ndarray, output_path: Path, main_title: str):
+    """Generate and save a UMAP comparison plot."""
+    pos_encoders = list(embeds_dict.keys())
+    n_plots = len(pos_encoders)
+    
+    fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 6, 5), sharex=True, sharey=True)
+    if n_plots == 1:
+        axes = [axes] # Ensure axes is always a list
+        
     unique_labels = sorted(list(set(labels)))
-    palette = sns.color_palette("viridis", len(unique_labels))
-    color_map = {label: color for label, color in zip(unique_labels, palette)}
+    colors = sns.color_palette(CUSTOM_PALETTE, n_colors=len(unique_labels))
+    color_map = {label: color for label, color in zip(unique_labels, colors)}
 
-    fig.suptitle(main_title, fontsize=TITLE_FONT_SIZE, y=1.02)
-
-    for ax, (model_name, umap_embeds) in zip(axes, embeds_dict.items()):
-        ax.scatter(umap_embeds[:, 0], umap_embeds[:, 1], c=[color_map[l] for l in labels], s=20, alpha=0.8)
-        ax.set_title(model_name.replace("_", " ").title(), fontsize=AXIS_FONT_SIZE)
+    for i, pe_name in enumerate(pos_encoders):
+        ax = axes[i]
+        embeds_2d = embeds_dict[pe_name]
+        
+        # Standardize display names
+        display_name = pe_name.replace('_', ' ')
+        if 'rope' in pe_name.lower(): display_name = 'RoPE'
+        if 'ft alibi' in display_name.lower(): display_name = 'AliBi'
+        
+        for label in unique_labels:
+            mask = np.array(labels) == label
+            ax.scatter(embeds_2d[mask, 0], embeds_2d[mask, 1], label=label, alpha=0.7, color=color_map[label], s=15)
+        
+        ax.set_title(display_name.title())
         ax.set_xticks([])
         ax.set_yticks([])
         sns.despine(ax=ax, left=True, bottom=True)
 
-        # Add annotations for centroids
-        texts = []
-        for label_name in unique_labels:
-            idx = [i for i, l in enumerate(labels) if l == label_name]
-            if not idx:
-                continue
-            centroid = umap_embeds[idx].mean(axis=0)
-            texts.append(ax.text(centroid[0], centroid[1], label_name, fontsize=9, ha='center', va='center'))
-
-        if texts:
-            adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='->', color='black'))
-
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(output_path, dpi=300)
-    plt.close(fig)
-    print(f"Saved plot to: {output_path}") 
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc='center right', bbox_to_anchor=(1.05, 0.5), title="Class")
+    
+    fig.suptitle(main_title, fontsize=18, y=1.02)
+    plt.tight_layout(rect=[0, 0, 0.95, 1])
+    
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig) 

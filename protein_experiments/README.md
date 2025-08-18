@@ -18,13 +18,11 @@ On protein tasks from HuggingFace:
 ## Installation
 
 ```bash
-# Clone the PE-FastText repository first
-cd ..
-pip install -e .  # or pip install -e ".[gpu]" for RoPE support
+# From the repo root
+pip install -e .  # or pip install -e '.[gpu]' for RoPE/GPU
 
-# Install experiment dependencies
-cd protein_experiments
-pip install scikit-learn datasets pyyaml tqdm
+# Experiment extras
+pip install -r protein_experiments/requirements.txt
 # Optional: pip install torch transformers  # for ESM2 support
 ```
 
@@ -65,11 +63,11 @@ python run_experiment.py --single --task fluorescence --embedder esm2
 ### 3. Run from Configuration File
 
 ```bash
-# Run tiny test configuration
-python run_experiment.py --config configs/tiny_test.yaml
-
-# Run full experiment
+# Example configs
+python run_experiment.py --config configs/example_fasttext_baseline.yaml
 python run_experiment.py --config configs/example_fasttext_rope.yaml
+python run_experiment.py --config configs/example_pretrained_frozen.yaml
+python run_experiment.py --config configs/example_pretrained_finetuned.yaml
 ```
 
 ### 4. Run Full Comparison
@@ -130,8 +128,7 @@ protein_experiments/
 ├── run_experiment.py    # Local experiment runner
 ├── pretrain_sample.py   # Pre-train on small datasets
 ├── pretrain_uniref50.py # Pre-train on UniRef50
-├── modal_app.py         # Modal cloud app
-├── run_modal.py         # Modal wrapper script
+├── modal_app.py         # Modal cloud app (functions)
 └── README.md
 ```
 
@@ -162,28 +159,11 @@ The framework supports pre-training FastText models on large protein corpora (e.
 - `fine_tune`: Whether to fine-tune (true) or freeze (false) embeddings
 - Works with all positional encodings (RoPE, sinusoidal, etc.)
 
-## Implementation Notes
+## Options at a glance
 
-### Positional Encodings
-
-- **Sinusoidal**: Classic transformer-style positional encoding
-- **Learned**: Simple embedding table for positions
-- **RoPE**: Rotary positional encoding (requires PyTorch)
-- **ALiBi**: Linear bias - implemented as surrogate for FastText
-- **ft_alibi**: FastText-compatible ALiBi using residue distances
-
-### Tokenization
-
-- **K-mer**: Sliding window of k amino acids (default k=6)
-- **Residue**: Individual amino acids as tokens
-
-### Technical Details
-
-1. **ALiBi Implementation**: Since FastText doesn't have attention mechanisms, ALiBi is implemented as a position-aware encoding that approximates the distance-based biasing concept.
-
-2. **Memory Efficiency**: All data processing uses generators to handle large datasets without loading everything into memory.
-
-3. **Modular Design**: Embedders and predictors are easily extensible through abstract base classes.
+- Positional encoders: `sinusoid`, `learned`, `rope`, `alibi`, `ft_alibi`
+- Tokenization: `kmer` (k=3–7) or `residue`
+- Predictors: `rf`, `linear`, `mlp`, `xgboost`
 
 ## Results Format
 
@@ -195,43 +175,46 @@ Experiments output JSON files with:
 
 ## Modal (Cloud) Execution
 
-For faster pre-training and parallel experiments, use Modal:
+For faster pre-training and parallel experiments, use Modal.
 
 ### Setup
 
 ```bash
-# Install Modal
 pip install modal
-
-# Authenticate (first time only)
 modal token new
+```
+
+### Dataset helpers (volumes)
+
+These functions use volumes named: datasets=`pe-fasttext-datasets`, models=`pe-fasttext-models`, results=`pe-fasttext-results7`.
+
+```bash
+# From protein_experiments/
+modal run modal_app.py::download_uniref50
+# Optional (if .gz already present in the volume):
+# modal run modal_app.py::decompress_uniref50
 ```
 
 ### Pre-training on Modal
 
 ```bash
-# Pre-train on 1% of UniRef50 (~2-3 hours)
-python run_modal.py pretrain --split 0.01
-
-# Pre-train on 10% of UniRef50 (~1 day)
-python run_modal.py pretrain --split 0.10
+modal run modal_app.py::pretrain_uniref50_fasta --train-split 0.01 --tokenization kmer --k 5 --dim 128 --epochs 5
 ```
 
 ### Running Experiments on Modal
 
 ```bash
-# Run single experiment
-python run_modal.py experiment --config configs/example_fasttext_rope.yaml
+# Full grid (skips runs already completed in results volume)
+modal run modal_app.py::run_all_experiments
 
-# Run full comparison (parallel)
-python run_modal.py experiment --compare
-```
+# Subsets
+modal run modal_app.py::run_ssp_experiments
+modal run modal_app.py::run_deeploc_experiments
+modal run modal_app.py::run_esm2_experiments
 
-### Deploy as Modal App
-
-```bash
-# Deploy for scheduled runs
-python run_modal.py deploy
+# Summaries
+modal run modal_app.py::create_summary_parquet
+modal run modal_app.py::status
 ```
 
 ## Troubleshooting

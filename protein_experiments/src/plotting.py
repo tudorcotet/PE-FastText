@@ -4,17 +4,30 @@ import seaborn as sns
 from pathlib import Path
 
 # --- Plotting Configuration ---
-sns.set_theme(style="ticks", palette="viridis")
+CUSTOM_PALETTE = ["#414A87", "#CCA53D", "#284C64", "#6E9E5B", "#7F2239"]
+sns.set_style("whitegrid")
+sns.set_context("talk")
 FIG_SIZE = (10, 6)
 TITLE_FONT_SIZE = 16
 AXIS_FONT_SIZE = 12
 
 def save_plot(fig, output_path: Path, is_catplot=False):
     """Save a Matplotlib figure, handling regular plots and FacetGrids."""
+    sns.despine()
     if not is_catplot:
         fig.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.savefig(output_path, dpi=300)
+    fig.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
+
+def annotate_bars(ax, **kwargs):
+    """Adds value annotations to bar plots."""
+    for p in ax.patches:
+        ax.annotate(f'{p.get_height():.4f}',
+                    (p.get_x() + p.get_width() / 2., p.get_height()),
+                    ha='center', va='center',
+                    xytext=(0, 9),
+                    textcoords='offset points',
+                    fontsize=10)
 
 def plot_performance_by_task(df: pd.DataFrame, output_dir: Path):
     """Plot model performance (R2 or Accuracy) grouped by task."""

@@ -41,3 +41,5 @@ CLAUDE.md
 .claude/
 .specstory/
 .mypy_chache
+protein_experiments/protein_analysis_env
+experiments_old

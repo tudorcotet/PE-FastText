@@ -172,7 +172,8 @@ class FastTextEmbedder(BaseEmbedder):
                 sequences, 
                 k=self.k, 
                 average_sequences=average_sequences, 
-                show_progress=show_progress
+                show_progress=show_progress,
+                tokenization=self.tokenization
             )
 
         # Original logic for non-PE models

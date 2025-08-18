@@ -1,149 +1,152 @@
-# Positionally-Enhanced FastText (PE-FastText)
+# Positionally-Enhanced FastText (PE‑FastText)
 
-PE-FastText is a **light-weight, position-aware embedding generator for biological sequences** (DNA, RNA, proteins).
-It augments the sub-word semantics of [FastText](https://arxiv.org/abs/1607.04606) with positional encodings (sinusoidal, RoPE, ALiBi or learned) so that each embedding captures both **"what motif is this?"** and **"where does it sit?"**.
+Light-weight, position-aware embeddings for biological sequences (DNA/RNA/proteins). FastText semantics + optional positional encodings (sinusoid, learned, RoPE, ALiBi) and simple downstream predictors.
 
-With a single lookup table PE-FastText can scan gigabases of raw sequence in linear time, flagging only the most promising regions for deeper analysis by heavy transformer models such as Evo 2 or HyenaDNA.
-
----
-
-## Highlights
-
-* FastText-style **n-gram semantics** for k-mers (3-7).
-* Pluggable **positional encoders**: sinusoid, RoPE, ALiBi, learned.
-* Two fusion rules – **`add`** (same dimensionality) or **`concat`** (semantic ∥ position).
-* Out-of-the-box **FAISS** similarity search, light downstream heads, ablation grid.
-* Remote execution on **[Modal](https://modal.com/)** for large corpus training & evaluation.
-* Shipping as a standard **PEP-621** package (`pyproject.toml`), installable with `pipx` or `poetry`.
+This repo contains the core library (`src/pe_fasttext`) and a reproducible experiment suite for proteins in `protein_experiments/`.
 
 ---
 
-## Installation
+## Install
+
+Python 3.9+.
 
 ```bash
-# Option 1 – Poetry (recommended for development)
-poetry install --with gpu  # add --with gpu to install torch extras
+# 1) Install the library so experiments can import pe_fasttext
+pip install -e .  # from repo root
 
-# Option 2 – pip
-pip install pe-fasttext              # cpu-only
-pip install pe-fasttext[gpu]          # + PyTorch for RoPE / GPU
-```
-
-Python ≥ 3.9 is required.
-
----
-
-## Quick start
-
-### 1. Download corpora (≈ 100 GB)
-
-```bash
-peft-download  \  # <- CLI entry-point
-  --corpus uniref50 \
-  --corpus mgnify \
-  --output ~/data/peft_corpora
-```
-
-Each corpus is streamed & deduplicated on the fly (see `pe_fasttext/dataset.py`). You can customise the list with repeated `--corpus` flags.
-
-### 2. Train FastText (semantics only)
-
-```bash
-peft-train \
-  --corpus ~/data/peft_corpora/uniref50.fasta \
-  --kmer 3 4 5 \
-  --dim 512 \
-  --workers 32 \
-  --epochs 10 \
-  --output ~/models/peft/fasttext_protein.bin
-```
-
-Training runs locally by default. Add `--modal` to spin up a remote Modal GPU/CPU job (see `modal/fasttext.py`).
-
-### 3. Attach positional module & write embeddings
-
-```bash
-peft-embed \
-  --model ~/models/peft/fasttext_protein.bin \
-  --pos-encoder sinusoid \
-  --fusion add \
-  --fasta path/to/query_sequences.fasta \
-  --index-out query.faiss
-```
-
-Embeddings are streamed into a FAISS (L2 or cosine) index ready for k-NN look-ups.
-
-### 4. Benchmarks & ablations
-
-```bash
-# Suite of unsupervised + supervised benchmarks (Table 1–2 in the paper)
-peft-bench run --config config/default.yaml --modal
-
-# 5-axis ablation grid (Table 3)
-peft-ablate grid --config config/ablation.yaml --modal
-```
-
-Results are written to `results/` as CSV + interactive HTML plots.
-
----
-
-## Project layout
-
-```
-pe-fasttext/
-├── src/pe_fasttext/        # main library
-│   ├── tokenization.py     # k-mer streaming
-│   ├── position_encodings.py
-│   ├── fasttext_utils.py   # wrapper around gensim
-│   ├── model.py            # fuse semantics + position
-│   ├── dataset.py          # corpus download / parsing
-│   ├── benchmark.py        # unsupervised + supervised tasks
-│   ├── ablation.py         # grid search utilities
-│   ├── cli.py              # Typer app exposing 5 commands
-│   └── …
-├── modal/
-│   ├── fasttext.py         # Modal image & training function
-│   ├── benchmarks.py       # Modal stubs for long jobs
-│   └── …
-├── scripts/                # ad-hoc helpers
-├── config/                 # YAML config templates
-├── examples/               # notebooks & minimal pipelines
-├── tests/                  # pytest unit tests (soon)
-├── pyproject.toml
-└── README.md
+# 2) Install experiment extras
+pip install -r protein_experiments/requirements.txt
+# Optional: if you plan to use ESM2 or RoPE on GPU, ensure a working PyTorch install
 ```
 
 ---
 
-## Modal remote execution
+## Run locally
 
-Large-scale training (≈ billions of k-mers) and evaluation are wrapped in [Modal](https://modal.com/) functions so you can run:
+All commands are run from `protein_experiments/`.
 
 ```bash
-peft-train --modal …        # dispatch to cloud CPUs/GPUs
-peft-bench run --modal
+cd protein_experiments
 ```
 
-Set your token once (`modal token new`) and the CLI will forward jobs.
+- Single experiment (FastText baseline):
+
+```bash
+python run_experiment.py --single --task fluorescence --embedder fasttext
+```
+
+- With positional encoding (example: RoPE) or residue tokenization:
+
+```bash
+python run_experiment.py --single --task fluorescence --embedder fasttext --pos-encoder rope
+python run_experiment.py --single --task fluorescence --embedder fasttext --tokenization residue
+```
+
+- With ESM2 (requires torch+transformers):
+
+```bash
+python run_experiment.py --single --task fluorescence --embedder esm2
+```
+
+- From a config file:
+
+```bash
+python run_experiment.py --config configs/example_fasttext_rope.yaml
+```
+
+- Batch comparison across tasks/embedders (writes to `results/`):
+
+```bash
+python run_experiment.py --compare --output-dir results/comparison
+```
+
+### Pre-training (optional)
+
+- Quick pre-train on a small HF dataset (minutes):
+
+```bash
+python pretrain_sample.py --dataset tattabio/OG_prot --max-sequences 10000 --output models/sample_pretrained.bin
+```
+
+- UniRef50 pre-train via HF streaming (hours to days depending on split):
+
+```bash
+python pretrain_uniref50.py --train-split 0.01 --epochs 5 --output models/uniref50_pretrained_kmer5.bin
+```
+
+Use the resulting `--pretrained_path` with `run_experiment.py` configs to freeze or fine‑tune.
 
 ---
 
-## Configuration
+## Run on Modal (cloud)
 
-YAML files in `config/` fully describe a run – corpora, hyper-parameters, evaluation datasets. All CLI commands take a `--config` override.
+Great for UniRef50 pre-training and large experiment grids. First-time setup:
+
+```bash
+pip install modal
+modal token new
+```
+
+Commands below are run from `protein_experiments/` and use named volumes:
+- datasets: `pe-fasttext-datasets`
+- models: `pe-fasttext-models`
+- results: `pe-fasttext-results7`
+
+- Download UniRef50 into the datasets volume and/or decompress:
+
+```bash
+modal run modal_app.py::download_uniref50
+# If you already have uniref50.fasta.gz in the volume, you can just decompress:
+# modal run modal_app.py::decompress_uniref50
+```
+
+- Pre-train on UniRef50 (customize args as needed):
+
+```bash
+modal run modal_app.py::pretrain_uniref50_fasta --train-split 0.10 --tokenization kmer --k 5 --dim 128 --epochs 10
+```
+
+- Run experiment grids (CPU workers in parallel):
+
+```bash
+# All experiments (skips runs already completed in the results volume)
+modal run modal_app.py::run_all_experiments
+
+# Subsets
+modal run modal_app.py::run_ssp_experiments
+modal run modal_app.py::run_deeploc_experiments
+modal run modal_app.py::run_esm2_experiments
+```
+
+- Summarize many JSON results into a single Parquet file:
+
+```bash
+modal run modal_app.py::create_summary_parquet
+```
+
+Results live under the `pe-fasttext-results7` volume (`/results/...`). You can browse/download them from the Modal UI or via the `modal volume` CLI.
 
 ---
 
-## Citing
+## Data sources
 
-If you use PE-FastText in academic work, please cite the accompanying MSc thesis:
+Downstream tasks are pulled automatically from HuggingFace datasets in `src/data.py`:
+- `InstaDeepAI/true-cds-protein-tasks` (fluorescence, stability, melting_point, beta_lactamase_complete, SSP)
+- `bloyal/deeploc` (multilabel subcellular localization)
+
+UniRef50 for pre-training is streamed from HF or downloaded via Modal helpers.
+
+---
+
+## Citation
+
+If you use PE‑FastText, please cite the accompanying MSc thesis (placeholder):
 
 ```
-@misc{bohl2024peft,
+@misc{pefasttext2024,
   title   = {Positionally-enhanced FastText embeddings for biological sequences},
   author  = {Bohl, Michael and Cotet, Tudor-Stefan},
-  year    = {2024},
-  note    = {MSc thesis, ETH Zürich}
+  year    = {2024}
 }
 ```
 
@@ -151,4 +154,4 @@ If you use PE-FastText in academic work, please cite the accompanying MSc thesis
 
 ## License
 
-MIT. See `LICENSE` file. 
+MIT. See `LICENSE`.
