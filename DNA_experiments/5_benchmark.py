@@ -364,7 +364,8 @@ def create_grouped_plot(ax, metric_name, metric_mean_col, metric_sem_col, y_labe
     ax.set_title(f'Performance by Dataset - {metric_name}', fontsize=14)
     
     ax.set_xticks(dataset_positions)
-    ax.set_xticklabels(datasets, rotation=45, ha='right')
+    display_datasets = [d.replace('demo_', '') for d in datasets]
+    ax.set_xticklabels(display_datasets, rotation=45, ha='right')
     
     ax.set_ylim(0.5, 1)
     
@@ -385,9 +386,11 @@ def plot_results(df: pd.DataFrame, model_type: str, out_prefix: str):
             'demo_coding_vs_intergenomic_seqs', 'human_enhancers_cohn',
             'human_nontata_promoters','human_ocr_ensembl'
         ],
-        'accuracy': [91.3, 74.2, 89.2, 96.6, 80.9, 93.8]
+        'accuracy': [91.3, 74.2, 96.6, 80.9]
     }
     hyena_df = pd.DataFrame(hyena_data_static)
+    # Keep only datasets present in this run (robust to varying dataset selections)
+    hyena_df = hyena_df[hyena_df['dataset'].isin(df_clean['dataset'].unique())].copy()
     hyena_df['accuracy'] = hyena_df['accuracy'] / 100
     hyena_df['encoding'] = 'HyenaDNA'
 
@@ -422,25 +425,23 @@ def plot_results(df: pd.DataFrame, model_type: str, out_prefix: str):
     encoders_acc = ['none', 'sinusoid', 'rope', 'alibi', 'HyenaDNA']
     datasets = sorted(list(df_clean['dataset'].unique()))
 
-    # Create plots
-    fig, axes = plt.subplots(3, 1, figsize=(15, 30))
-    
-    create_grouped_plot(axes[0], 'AUC', 'auc_mean', 'auc_sem', 'AUC', encoders_auc_ap, complete_summary, datasets)
-    axes[0].legend().remove()
-    create_grouped_plot(axes[1], 'Average Precision', 'average_precision_mean', 'average_precision_sem', 'Average Precision', encoders_auc_ap, complete_summary, datasets)
-    create_grouped_plot(axes[2], 'Accuracy', 'accuracy_mean', 'accuracy_sem', 'Accuracy', encoders_acc, complete_summary, datasets)
-    axes[2].legend().remove()
+    metrics_to_plot = [
+        {'metric': 'AUC', 'mean_col': 'auc_mean', 'sem_col': 'auc_sem', 'encoders': encoders_auc_ap, 'y_label': 'AUC'},
+        {'metric': 'Average Precision', 'mean_col': 'average_precision_mean', 'sem_col': 'average_precision_sem', 'encoders': encoders_auc_ap, 'y_label': 'Average Precision'},
+        {'metric': 'Accuracy', 'mean_col': 'accuracy_mean', 'sem_col': 'accuracy_sem', 'encoders': encoders_acc, 'y_label': 'Accuracy'}
+    ]
 
-    handles, labels = axes[1].get_legend_handles_labels()
-    fig.legend(handles, labels, title='Method', loc='upper left', bbox_to_anchor=(1.0, 0.9))
-
-
-    fig.tight_layout(rect=[0, 0, 0.9, 1]) # Adjust layout to make space for legend
-    
-    fig_path = f"{out_prefix}_comparison_{model_type}.png"
-    plt.savefig(fig_path, dpi=300, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Saved plot to {fig_path}")
+    for plot_info in metrics_to_plot:
+        fig, ax = plt.subplots(1, 1, figsize=(15, 10))
+        create_grouped_plot(ax, plot_info['metric'], plot_info['mean_col'], plot_info['sem_col'], plot_info['y_label'], plot_info['encoders'], complete_summary, datasets)
+        
+        fig.tight_layout(rect=[0, 0, 0.85, 1]) # Adjust layout to make space for legend
+        
+        metric_name_file = plot_info['metric'].lower().replace(' ', '_')
+        fig_path = f"{out_prefix}_comparison_{model_type}_{metric_name_file}.png"
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Saved plot to {fig_path}")
 
 #############################################
 # Main
@@ -471,40 +472,51 @@ if __name__ == '__main__':
 
     model_configs = [
         {
-            'model_type': 'kmer',
-            'model_path': args.kmer_model_path,
-        },
-        {
             'model_type': 'bpe',
             'model_path': args.bpe_model_path,
             'bpe_tokenizer_path': args.bpe_tokenizer_path,
-        }
+        },
+        {
+            'model_type': 'kmer',
+            'model_path': args.kmer_model_path,
+        }        
     ]
 
     for config in model_configs:
         model_type = config['model_type']
-        print(f"\n\n{'='*20} Running Benchmark for {model_type.upper()} model {'='*20}")
+        print(f"\n\n{'='*20} Processing for {model_type.upper()} model {'='*20}")
 
-        if not os.path.exists(config['model_path']):
-            print(f"Model not found: {config['model_path']}. Skipping.")
-            continue
+        out_csv = f"benchmark_results_{model_type}.csv"
+        results = None
 
-        params = {
-            'model_path': config['model_path'],
-            'model_type': model_type,
-            'k': args.k,
-            'chunk_size': args.chunk_size,
-        }
-        if 'bpe_tokenizer_path' in config:
-            params['bpe_tokenizer_path'] = config['bpe_tokenizer_path']
-
-        bench = FastTextPositionalBenchmark(**params)
-        results = bench.run(datasets, seeds, encodings)
-
-        if results.empty:
-            print(f"No results produced for {model_type}.")
+        if os.path.exists(out_csv):
+            print(f"Found existing results file: {out_csv}. Loading...")
+            results = pd.read_csv(out_csv)
         else:
-            out_csv = f"benchmark_results_{model_type}.csv"
-            results.to_csv(out_csv, index=False)
-            print(f"Saved results to {out_csv}")
+            print(f"No results file found at {out_csv}. Running benchmark...")
+            if not os.path.exists(config['model_path']):
+                print(f"Model not found: {config['model_path']}. Skipping.")
+                continue
+
+            params = {
+                'model_path': config['model_path'],
+                'model_type': model_type,
+                'k': args.k,
+                'chunk_size': args.chunk_size,
+            }
+            if 'bpe_tokenizer_path' in config:
+                params['bpe_tokenizer_path'] = config['bpe_tokenizer_path']
+
+            bench = FastTextPositionalBenchmark(**params)
+            results = bench.run(datasets, seeds, encodings)
+            
+            if results.empty:
+                print(f"No results produced for {model_type}.")
+            else:
+                results.to_csv(out_csv, index=False)
+                print(f"Saved results to {out_csv}")
+
+        if results is not None and not results.empty:
             plot_results(results, model_type, out_prefix='figures/benchmark')
+        else:
+            print(f"No results to plot for {model_type}.")
