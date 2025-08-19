@@ -1,0 +1,48 @@
+# Data directory
+data/
+data/*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo 
+
+CLAUDE.md
+.claude/
+.specstory/
+.mypy_chache
+protein_experiments/protein_analysis_env
+experiments_old
+
+.DS_Store
+.specstory*

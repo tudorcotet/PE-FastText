@@ -1,0 +1,25 @@
+# FastText with frozen pre-trained UniRef50 embeddings
+task: fluorescence
+
+embedder:
+  type: fasttext
+  model_path: models/fluorescence_pretrained_frozen.bin
+  pretrained_path: models/uniref50_pretrained.bin
+  fine_tune: false  # Use pre-trained embeddings as-is
+  tokenization: kmer
+  k: 6
+  dim: 128
+
+predictor:
+  type: rf
+  n_estimators: 100
+  max_depth: 20
+  seed: 42
+
+data:
+  train_size: 0.5
+  val_split: 0.1
+  max_length: 500
+  seed: 42
+
+output_dir: results/pretrained_frozen
