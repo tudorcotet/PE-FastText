@@ -165,6 +165,70 @@ The framework supports pre-training FastText models on large protein corpora (e.
 - Tokenization: `kmer` (k=3–7) or `residue`
 - Predictors: `rf`, `linear`, `mlp`, `xgboost`
 
+## Reproduce the full grid locally (what the Modal app runs)
+
+This mirrors the large grid from `modal_app.py`. Place the two pre-trained models in `protein_experiments/models/` with these names:
+- `uniref50_pretrained_full_residue.bin`
+- `uniref50_pretrained_10pct_kmer.epoch6.bin`
+
+Then run locally on CPU (sequential):
+
+```bash
+python - <<'PY'
+import json
+from pathlib import Path
+from modal_app import generate_all_experiment_configs
+from src.experiment import Experiment
+
+models_dir = Path('models')
+results_root = Path('results/runs')
+results_root.mkdir(parents=True, exist_ok=True)
+
+configs = generate_all_experiment_configs()
+
+# Optional: narrow the grid for a quick local run
+# configs = [c for c in configs if c['task'] in {'fluorescence','stability'} and c['predictor']['type']=='rf' and c['embedder']['type']=='fasttext']
+
+for cfg in configs:
+    ep = cfg.get('embedder', {}).get('pretrained_path')
+    if ep:
+        cfg['embedder']['pretrained_path'] = str(models_dir / Path(ep).name)
+    run_name = f"{cfg['task']}_{cfg['embedder']['type']}_{cfg.get('id','exp')}"
+    out_dir = results_root / run_name
+    cfg['output_dir'] = str(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    res = Experiment(cfg).run()
+    with open(out_dir / 'results.json', 'w') as f:
+        json.dump(res, f, indent=2)
+print('Done. Results in results/runs/*')
+PY
+```
+
+Summarize all `results.json` to a single Parquet locally (optional):
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import json
+import pandas as pd
+
+rows = []
+for run_dir in Path('results/runs').glob('*'):
+    f = run_dir / 'results.json'
+    if f.exists():
+        data = json.load(open(f))
+        rows.append(data)
+if rows:
+    df = pd.json_normalize(rows)
+    out = Path('results/results_summary.parquet')
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(out, index=False)
+    print('Wrote', out)
+else:
+    print('No results found')
+PY
+```
+
 ## Results Format
 
 Experiments output JSON files with:

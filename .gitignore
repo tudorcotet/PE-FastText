@@ -44,4 +44,5 @@ CLAUDE.md
 protein_experiments/protein_analysis_env
 experiments_old
 
-.DS_store
+.DS_Store
+.specstory*

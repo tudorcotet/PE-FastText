@@ -1,6 +1,16 @@
 # Genomic Sequence Embedding and Benchmarking
 
-This project provides a complete workflow for training and evaluating FastText models on genomic data for classification tasks. It includes scripts for tokenization, hyperparameter tuning, model training, and benchmarking with positional encodings. Most of the scripts have modifiable hyperparameters to allow for for testing different configurations but the default settings should are what was used in the final report.
+End-to-end workflow for training and evaluating FastText models on genomic data (k-mer and BPE), including positional encodings.
+
+## Install
+
+```bash
+# From repo root (for shared utilities)
+pip install -e .
+
+# Extra packages used by these scripts
+pip install gensim tokenizers umap-learn matplotlib seaborn pandas scikit-learn tqdm genomic-benchmarks
+```
 
 ## Workflow
 
@@ -35,9 +45,9 @@ python 2_hyper_tuning.py
 
 **Script:** `3_real_vs_fake.py`
 
-This script provides visual sanity check to verify that the embeddings make sense. It trains a FastText model (either k-mer or BPE) and then generates UMAP plots to visualize the separation between embeddings of real and synthetic DNA sequences. It also explores the effect of different positional encodings (Sinusoidal, RoPE, ALiBi) on the embeddings.
+This script provides a visual sanity check. It trains a FastText model (k-mer or BPE) and generates UMAP plots for real vs. synthetic DNA. It also compares positional encodings (Sinusoidal, RoPE, ALiBi).
 
-- **Output:** UMAP plots saved in the `figures/` directory.
+- **Output:** UMAP plots saved under `plots/` (e.g., `plots/umap_real_vs_fake_kmer_multi_pe.png`).
 
 **Usage:**
 ```bash
@@ -70,8 +80,8 @@ This is the final step where the trained models are evaluated on various downstr
 
 - **Input:** Trained models from Step 4, benchmark datasets from `benchmark_datasets/`.
 - **Output:**
-    - `figures/benchmark_results_<model_type>.csv`: CSV file with benchmark results.
-    - `figures/benchmark_comparison_<model_type>.png`: Plot comparing the performance of different methods.
+    - `benchmark_results_<model_type>.csv` (at repo folder root): results per encoder/dataset/seed
+    - `figures/benchmark_comparison_<model_type>_{accuracy,auc,average_precision}.png`: grouped bar charts
 
 **Usage:**
 ```bash
@@ -79,17 +89,36 @@ This is the final step where the trained models are evaluated on various downstr
 python 5_benchmark.py --datasets "demo_coding_vs_intergenomic_seqs,human_enhancers_cohn,human_nontata_promoters,human_ocr_ensembl"
 ```
 
-## Dependencies
+## Notes
 
-You will need to install the required Python packages. You can typically find these at the top of the Python scripts. Key dependencies include:
+- Input FASTA path defaults to `./data/GCA_000001405.15_GRCh38_genomic.fna`. Adjust via CLI flags if your dataset lives elsewhere.
+- For BPE flows, run step 1 first to produce `hg38_tokenizer.json` used by steps 3–5.
 
-- `gensim`
-- `tokenizers`
-- `numpy`
-- `pandas`
-- `scikit-learn`
-- `matplotlib`
-- `seaborn`
-- `umap-learn`
-- `tqdm`
-- `genomic-benchmarks`
+## Reproduce the benchmark locally (as in the figures)
+
+1) Train both models (or use your own trained models):
+
+```bash
+python 4_train_models.py --vector-size 128 --window 10 --epochs_kmer 10 --epochs_bpe 20
+```
+
+2) Run benchmarks for both model types with common encoders and multiple seeds:
+
+```bash
+# K-mer
+python 5_benchmark.py \
+  --kmer_model_path models/fasttext_kmer_hg38.bin \
+  --datasets "demo_coding_vs_intergenomic_seqs,human_enhancers_cohn,human_nontata_promoters,human_ocr_ensembl" \
+  --encodings sinusoid,rope,alibi \
+  --seeds 1,2,3,4,5
+
+# BPE
+python 5_benchmark.py \
+  --bpe_model_path models/fasttext_bpe_hg38.bin \
+  --bpe_tokenizer_path hg38_tokenizer.json \
+  --datasets "demo_coding_vs_intergenomic_seqs,human_enhancers_cohn,human_nontata_promoters,human_ocr_ensembl" \
+  --encodings sinusoid,rope,alibi \
+  --seeds 1,2,3,4,5
+```
+
+3) The script writes CSVs like `benchmark_results_{kmer|bpe}.csv` and plots under `figures/`.
