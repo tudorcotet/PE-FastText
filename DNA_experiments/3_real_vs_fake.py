@@ -244,6 +244,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
     parser.add_argument("--window_size", type=int, default=5, help="Context window size for FastText.")
     parser.add_argument("--kmer_length", type=int, default=6, help="K-mer length for the k-mer model.")
+    parser.add_argument("--aggregation_mode", type=str, default='mean', choices=['CWA', 'mean'], help="Aggregation mode for embeddings.")
     args = parser.parse_args()
 
     print("Loading and sampling sequences...")
@@ -299,7 +300,8 @@ def main():
             args.model_type, 
             tokenizer=tokenizer, 
             k=args.kmer_length, 
-            pe_type=pe_type
+            pe_type=pe_type,
+            mode=args.aggregation_mode
         )
     print("All embeddings generated.")
 
