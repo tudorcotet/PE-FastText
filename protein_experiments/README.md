@@ -168,8 +168,8 @@ The framework supports pre-training FastText models on large protein corpora (e.
 ## Reproduce the full grid locally (what the Modal app runs)
 
 This mirrors the large grid from `modal_app.py`. Place the two pre-trained models in `protein_experiments/models/` with these names:
-- `uniref50_pretrained_full_residue.bin`
-- `uniref50_pretrained_10pct_kmer.epoch6.bin`
+- `uniref50_pretrained_residue.bin`
+- `uniref50_pretrained_kmer.bin`
 
 Then run locally on CPU (sequential):
 
@@ -250,7 +250,7 @@ modal token new
 
 ### Dataset helpers (volumes)
 
-These functions use volumes named: datasets=`pe-fasttext-datasets`, models=`pe-fasttext-models`, results=`pe-fasttext-results7`.
+These functions use volumes named: datasets=`pe-fasttext-datasets`, models=`pe-fasttext-models`, results=`pe-fasttext-results`.
 
 ```bash
 # From protein_experiments/

@@ -35,7 +35,7 @@ Notes:
 
 ## Run on Modal (recommended)
 
-These functions use volumes named: datasets=`pe-fasttext-datasets`, models=`pe-fasttext-models`, results=`pe-fasttext-results6`.
+These functions use volumes named: datasets=`pe-fasttext-datasets`, models=`pe-fasttext-models`, results=`pe-fasttext-results`.
 
 ```bash
 pip install modal
@@ -47,8 +47,8 @@ modal run sanity_check/modal_app.py::run_sanity_checks_and_stats
 
 Requirements:
 - The models volume should contain the pre‑trained FastText models expected by the app:
-  - `/models/uniref50_pretrained_10pct_kmer.epoch6.bin`
-  - `/models/uniref50_pretrained_full_residue.bin`
+  - `/models/uniref50_pretrained_kmer.bin`
+  - `/models/uniref50_pretrained_residue.bin`
 - The datasets volume should contain `uniref50.fasta` if you want dataset stats:
   - You can create it with the protein experiments Modal helpers:
     - `modal run protein_experiments/modal_app.py::download_uniref50`

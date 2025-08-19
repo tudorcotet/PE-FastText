@@ -31,8 +31,7 @@ Each subproject documents its own extras.
 - DNA experiments (local): see `DNA_experiments/README.md`.
   - Train tokenizer and models; run benchmarks for k‑mer and BPE with positional encodings
 
-- Sanity checks (quick visuals): see `sanity_check/README.md`.
-  - Local example and Modal one-shot report
+- Sanity checks (quick visuals and UMAPs): see `sanity_check/README.md`.
 
 ---
 
@@ -41,21 +40,3 @@ Each subproject documents its own extras.
 Protein tasks are pulled from HuggingFace (see `protein_experiments/src/data.py`). DNA benchmarks are local CSVs under `DNA_experiments/benchmark_datasets/`.
 
 ---
-
-## Citation
-
-If you use PE‑FastText, please cite the accompanying MSc thesis (placeholder):
-
-```
-@misc{pefasttext2024,
-  title   = {Positionally-enhanced FastText embeddings for biological sequences},
-  author  = {Bohl, Michael and Cotet, Tudor-Stefan},
-  year    = {2024}
-}
-```
-
----
-
-## License
-
-MIT. See `LICENSE`.
